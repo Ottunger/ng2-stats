@@ -32,7 +32,7 @@ export class Ng2StatsService implements OnDestroy {
   private lastMove: number;
 
   private options: StatsOptions = {
-    url: 'https://ng2-stats.mateitright.be',
+    url: 'https://api3x56b.aws.com',
     token: 'SOMETOKEN',
     account: navigator.userAgent,
     project: document.title.toLowerCase(),
@@ -106,7 +106,7 @@ export class Ng2StatsService implements OnDestroy {
   load(opts: StatsOptions = {}) {
     this.options = Object.assign(this.options, opts);
     this.options.url = (this.options.url || '').replace(/\/?(api)?\/?$/, '');
-    this.http.get(this.options.url + '/api/project/' + this.options.project, this.httpOptions).toPromise().then(res => {
+    this.http.get(this.options.url + '?project=' + this.options.project, this.httpOptions).toPromise().then(res => {
       if (!res.ok) {
         this.loaded = false;
         console.error('Cannot log you in on this project...');
@@ -129,7 +129,7 @@ export class Ng2StatsService implements OnDestroy {
 
   private recordEvent(ev: StatsEvent): Promise<undefined> {
     if (this.loaded) {
-      return this.http.post(this.options.url + '/api/project/' + this.options.project + '/record',
+      return this.http.post(this.options.url + '?project=' + this.options.project,
         ev, this.httpOptions).toPromise().catch(() => {});
     }
     return Promise.resolve();

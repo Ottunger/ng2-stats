@@ -1,6 +1,9 @@
 node_modules/*
 npm-debug.log
+
 *.js
+!lambda/*.js
+
 *.map
 *.d.ts
 .idea
