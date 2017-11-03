@@ -1,0 +1,15 @@
+node_modules/*
+npm-debug.log
+*.js
+*.map
+*.d.ts
+.idea
+
+**/**.ngfactory.ts
+**/**.ngfactory.json
+
+example/node_modules
+!karma.conf.js
+coverage/
+.ng_build
+dist
