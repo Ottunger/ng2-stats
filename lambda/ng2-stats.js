@@ -21,23 +21,24 @@ exports.handler = (event, context, callback) => {
     switch(event.httpMethod) {
         case 'GET':
             if(/\/projects/.test(event.path)) {
+                const project = decodeURIComponent(event.queryStringParameters.project);
                 dynamo.getItem({
                     TableName: 'ng2-stats_users',
                     Key: {token: token}
                 }, (err, user) => {
-                    if(!user) {
+                    if(!user.Item) {
                         done(new Error('Cannot find user by authorization token'));
                         return;
                     }
                     dynamo.getItem({
                         TableName: 'ng2-stats_projects',
-                        Key: {id: event.queryStringParameters.project}
+                        Key: {id: project}
                     }, (err, data) => {
-                        if(!data) { // Do not create on error
-                            dynamo.putItem({TableName: 'ng2-stats_projects', Item: {id: event.queryStringParameters.project, owner: token, events: []}}, done);
+                        if(!data.Item) { // Do not create on error
+                            dynamo.putItem({TableName: 'ng2-stats_projects', Item: {id: project, owner: token, events: []}}, done);
                             return;
                         }
-                        done(err, data);
+                        done(err, data.Item);
                     });
                 });
             } else {
@@ -50,29 +51,30 @@ exports.handler = (event, context, callback) => {
                 dynamo.putItem({TableName: 'ng2-stats_users', Item: {token: token}}, done);
             } else if(/\/projects/.test(event.path)) {
                 const request = JSON.parse(event.body);
-                /* Kept for sample, but see https://eu-west-2.console.aws.amazon.com/apigateway/home?region=eu-west-2#/apis/ilpnvewoa0/models
-                 if (request.type !== 'routingChange' && request.type !== 'reload' && request.type !== 'error') {
-                 done(new Error('Bad request type'));
-                 return;
-                 }
-                 */
+                const project = decodeURIComponent(event.queryStringParameters.project);
+                // Kept this one, but see https://eu-west-2.console.aws.amazon.com/apigateway/home?region=eu-west-2#/apis/ilpnvewoa0/models
+                // Most of te checks are done by the REST API
+                if (request.type !== 'routingChange' && request.type !== 'reload' && request.type !== 'error' && request.type !== 'http') {
+                    done(new Error('Bad request type'));
+                    return;
+                }
                 dynamo.getItem({
                     TableName: 'ng2-stats_users',
                     Key: {token: token}
                 }, (err, user) => {
-                    if (!user) {
+                    if (!user.Item) {
                         done(new Error('Cannot find user by authorization token'));
                         return;
                     }
                     dynamo.getItem({
                         TableName: 'ng2-stats_projects',
-                        Key: {id: event.queryStringParameters.project}
+                        Key: {id: project}
                     }, (err, data) => {
-                        if (err || !data) {
-                            done(err, data);
+                        if (err || !data.Item || data.Item.owner !== token) {
+                            done(new Error('Cannot find project by id for authorization token'));
                             return;
                         }
-                        data.events.push({
+                        data.Item.events.push({
                             type: request.type,
                             to: request.to.toString().substr(0, 256),
                             at: request.at,
@@ -80,7 +82,7 @@ exports.handler = (event, context, callback) => {
                             message: request.message.toString().substr(0, 1024),
                             by: request.by
                         });
-                        dynamo.putItem({TableName: 'ng2-stats_projects', Item: data}, done);
+                        dynamo.putItem({TableName: 'ng2-stats_projects', Item: data.Item}, done);
                     });
                 });
             } else {

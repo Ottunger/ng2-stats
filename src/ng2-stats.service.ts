@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
-import { Http, Headers } from '@angular/http';
+import { Http, Headers, Response } from '@angular/http';
 import { Subscription } from 'rxjs/Subscription';
 import 'rxjs/add/operator/filter';
 import 'rxjs/add/operator/toPromise';
@@ -11,10 +11,11 @@ export interface StatsOptions {
   account?: string;
   project?: string;
   reloadOnError?: boolean;
+  monitoredHttp?: string;
 }
 
 interface StatsEvent {
-  type: 'routingChange' | 'reload' | 'error';
+  type: 'routingChange' | 'reload' | 'error' | 'http';
   to: string;
   at: number;
   spacing?: number;
@@ -30,13 +31,16 @@ export class Ng2StatsService implements OnDestroy {
   private routerSub: Subscription;
   private loaded = false;
   private lastMove: number;
+  private httpGet: Function;
+  private httpPost: Function;
 
   private options: StatsOptions = {
     url: 'https://ilpnvewoa0.execute-api.eu-west-2.amazonaws.com/prod',
     token: 'SPIKESEED',
     account: navigator.userAgent,
-    project: document.title.toLowerCase(),
-    reloadOnError: false
+    project: encodeURIComponent(document.title.toLowerCase().replace(/\s/g, '')),
+    reloadOnError: false,
+    monitoredHttp: '.'
   };
 
   private get httpOptions() {
@@ -49,6 +53,9 @@ export class Ng2StatsService implements OnDestroy {
 
   constructor(private router: Router, private http: Http) {
     this.lastMove = new Date().getTime();
+    this.httpGet = this.http.get;
+    this.httpPost = this.http.post;
+
     this.routerSub = this.router.events.filter(e => e instanceof NavigationEnd).subscribe((e: NavigationEnd) => {
       const now = new Date().getTime();
       this.recordEvent({
@@ -101,12 +108,48 @@ export class Ng2StatsService implements OnDestroy {
         });
       }
     };
+
+    (<any>this.http).get = (...params: any[]) => {
+      if (new RegExp(this.options.monitoredHttp).test(params[0])) {
+        const begin = new Date().getTime();
+        return this.httpGet.apply(this.http, params).map((res: Response) => {
+          const now = new Date().getTime();
+          this.recordEvent({
+            type: 'http',
+            to: params[0],
+            at: begin,
+            spacing: now - begin,
+            by: this.options.account
+          });
+          return res;
+        });
+      }
+      return this.httpGet.apply(this.http, params);
+    };
+
+    (<any>this.http).post = (...params: any[]) => {
+      if (new RegExp(this.options.monitoredHttp).test(params[0])) {
+        const begin = new Date().getTime();
+        return this.httpPost.apply(this.http, params).map((res: Response) => {
+          const now = new Date().getTime();
+          this.recordEvent({
+            type: 'http',
+            to: params[0],
+            at: begin,
+            spacing: now - begin,
+            by: this.options.account
+          });
+          return res;
+        });
+      }
+      return this.httpPost.apply(this.http, params);
+    };
   }
 
   load(opts: StatsOptions = {}) {
     this.options = Object.assign(this.options, opts);
     this.options.url = (this.options.url || '').replace(/\/$/, '');
-    this.http.get(this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise().then(res => {
+    this.httpGet.call(this.http, this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise().then((res: Response) => {
       if (!res.ok) {
         this.loaded = false;
         console.error('Cannot log you in on this project...');
@@ -114,7 +157,9 @@ export class Ng2StatsService implements OnDestroy {
         this.loaded = true;
         const lastReload = localStorage.getItem(Ng2StatsService.NG2_STATS_LR_KEY);
         if (lastReload) {
-          this.recordEvent(JSON.parse(lastReload)).then(() => localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY));
+          this.recordEvent(JSON.parse(lastReload)).then(ok => {
+            if (ok) { localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY); }
+          });
         }
       }
     }, () => {
@@ -129,9 +174,9 @@ export class Ng2StatsService implements OnDestroy {
 
   private recordEvent(ev: StatsEvent): Promise<undefined> {
     if (this.loaded) {
-      return this.http.post(this.options.url + '/projects?project=' + this.options.project,
-        ev, this.httpOptions).toPromise().catch(() => {});
+      return this.httpPost.call(this.http, this.options.url + '/projects?project=' + this.options.project,
+        ev, this.httpOptions).toPromise().then((res: Response) => res.ok, () => false);
     }
-    return Promise.resolve();
+    return Promise.resolve(false);
   }
 }
