@@ -79,7 +79,11 @@ exports.handler = (event, context, callback) => {
                                 to: list[0].to,
                                 avg: list.reduce((now, e) => now + e.spacing, 0) / list.length
                             })).sort((list1, list2) => list2.avg - list1.avg),
-                            avgWebpackReloadTime: reloads.reduce((now, e) => now + e.spacing, 0) / reloads.length
+                            avgWebpackReloadTime: reloads.reduce((now, e) => now + e.spacing, 0) / reloads.length,
+                            errorsPerPage: item.events.filter(e => e.type === 'error').groupBy(e => e.to).map(list => ({
+                                on: list[0].to,
+                                count: list.reduce((now, e) => now + e.spacing, 0) / list.length
+                            })).sort((list1, list2) => list2.count - list1.count)
                         };
                         delete item.events;
                         done(err, item);
