@@ -1,4 +1,4 @@
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, NgZone, OnDestroy } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
 import { Http, Headers, Response } from '@angular/http';
 import { Subscription } from 'rxjs/Subscription';
@@ -28,13 +28,7 @@ export class Ng2StatsService implements OnDestroy {
   private static NG2_STATS_LR_KEY = 'ng2-stats.last-reload';
   private static NG2_STATS_LE_KEY = 'ng2-stats.last-error';
 
-  private routerSub: Subscription;
-  private loaded = false;
-  private lastMove: number;
-  private httpGet: Function;
-  private httpPost: Function;
-
-  private options: StatsOptions = {
+  private static DEFAULT_OPTIONS: StatsOptions = {
     url: 'https://ilpnvewoa0.execute-api.eu-west-2.amazonaws.com/prod',
     token: 'SPIKESEED',
     account: navigator.userAgent,
@@ -42,6 +36,13 @@ export class Ng2StatsService implements OnDestroy {
     reloadOnError: false,
     monitoredHttp: '.'
   };
+
+  private routerSub: Subscription;
+  private options: StatsOptions = [];
+  private loaded = false;
+  private lastMove: number;
+  private httpGet: Function;
+  private httpPost: Function;
 
   private get httpOptions() {
     return {headers: new Headers({
@@ -51,10 +52,20 @@ export class Ng2StatsService implements OnDestroy {
     })};
   }
 
-  constructor(private router: Router, private http: Http) {
+  constructor(private router: Router, private http: Http, private zone: NgZone) {
     this.lastMove = new Date().getTime();
     this.httpGet = this.http.get;
     this.httpPost = this.http.post;
+
+    this.zone.runOutsideAngular(() => {
+      const span = document.createElement('SPAN');
+      span.innerHTML = '<span style="position: fixed; top: 10px; right: 10px; z-index: 99990; cursor: pointer;">' +
+        '<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAgCAIAAACKIl8oAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAR0SURBVEhLlZbPa1xVFMfnb3FVcZDgxo0KKWbXhVC6iq2SlULAQEUEIWqdRMEfm7RuAmpLUSrtogsjxWAbppn6AwIaFWok8/PNvGR+hEybl05e0vg593vz+tSXql/I5dxzz/d7zj33vjvJra2tNRqNlkOz2cQOggBbzmq1yjQMw/X1dSIVg0eRmgKMtE0kMSYNs16vM5Eu0yQaJH7AlFX5iRERWzG1Wo1RAcjm5HX5rByVJgIeipUNAeBhJAa/nFBwylZ98hCQS5ZJQAQ0bDzYjFrVVHKASBqlgpgSgwFUsmyQ408ERAHLJJdTI87WysLs6RNHn3gEPD584tXZG38EtmsTcPtQEcpdLpdVpTVEG0lCpY4HG91ycWY0b6JpHDl19vuKtY7+EqkdKAG21HJY8HExUTaiGTVtrF6bfMrL/Q1PvzVfd0QVIUOiMnIUiAJrkpNXU5ZuXxr3ShkYv7xilKRSSoRiLleW9dq66SJ+++z5I4+Nnl2sasq4UPAymTjzrcm5Uio/nDPu+Z/8CUG3G6IkjKtfjj0KI3/yXKnGmRAUxfsPQRxJqPrdzElHHLvi9kE+/L4hasLmvWjlvFen9mSnxKgWpjjxqCCH6q0D3Qu3o8FmUz0hxo6ROIWG4cbdnQP1/wWnu7O1gQhFABLknKJB2ZrNbn8QXX/NU/4jXp+PBne6VAnohoycLqZGpEGj0bk17TlpTP9o/V1610/TmFrscTaIttttSWNYQ5BTQ6TOdhanPCeNwk07n8yshaIdCVJJfcDfEFzQMNAlIpt/M2Rzpayld4r2lSEiIGLSbERzJgAvdia/UDTCYVk7nQ6rcKkMEWANYR7W5t8e9nGHoVC0CjKzpjF85hqfnL8hoNkqvT/i1w4DDaWWf5Ue+aDExqnYpOlg2Ivi++4Lc8i8BjQU6YdcHuF+HHVdY+1Rtca4xgMOE3v5k2OelAI3BGRVfezTZbu73Ai4GIQxmrQuiSC7Mz/pWSkgDTOr6slvul5UlxoRDJMGOlZcNAe7sz434WkPwDGSNUP6lbm1NqQH0D32DcHChY1haC5MPeOJCbhhnPs/pSe+bm+kXmZi0OHH0y4f0ox4MUAYLM2+mPFAca8Jy+h1/rn3btSgqzjlwLCqrUr3Vplw/fev3nzWCCPTS62VC+NDjm2gamipqodevrhU+vi4HuGZ4io6qPMN8vmgZL8yAml5fOfeOGosdO/GUX9rZ29/8+erH54+/mTe32ukh0ZGJz66+mtvf3ewFSWPcP7UTLFMQNJVe/n0I2/jL5+/YEFjl2px1LMSqtVWPxrEu3bn4y1Lv73L1d3bi+/1O7brvzzxL32xfHAj7GtUHvU+7Pdrxeulyvag7x+WSqWiJVrB6HZm3XNl2aFhS92Iq5sbQUCJCrD/+eAojqB+tB31u1iJU4eDzQhHRWGTVZ1lqdXqQdy+08Pjz4xei4yV/FMqFTkBU0bVInUlZgSEOWkDU8UDAnxD8GrOVKLsBmeyJBuDVaXBk6RnCRtgqIFBEPwJ/wGYPtEbbXcAAAAASUVORK5CYII="/></span>';
+      span.addEventListener('click', () => {
+        this.load(this.options, true);
+      });
+      document.body.appendChild(span);
+    });
 
     this.routerSub = this.router.events.filter(e => e instanceof NavigationEnd).subscribe((e: NavigationEnd) => {
       const now = new Date().getTime();
@@ -76,14 +87,17 @@ export class Ng2StatsService implements OnDestroy {
 
     const oldLog = window.console.log;
     (<any>window).console.log = (...params: any[]) => {
+      let beginCompile = 0;
       oldLog.apply(null, params);
       if (params[0].toString().indexOf('ecompiling') > -1) { // Webpack recompiling
+        beginCompile = new Date().getTime();
+      } else if (params[0].toString().indexOf('eloading') > -1) { // Webpack reloading
         const now = new Date().getTime();
         localStorage.setItem(Ng2StatsService.NG2_STATS_LR_KEY, JSON.stringify({
           type: 'reload',
           to: window.location.toString(),
           at: now,
-          spacing: now - this.lastMove,
+          spacing: now - beginCompile,
           by: this.options.account
         } as StatsEvent));
       }
@@ -146,8 +160,8 @@ export class Ng2StatsService implements OnDestroy {
     };
   }
 
-  load(opts: StatsOptions = {}) {
-    this.options = Object.assign(this.options, opts);
+  load(opts: StatsOptions = {}, print = false) {
+    this.options = Object.assign({}, Ng2StatsService.DEFAULT_OPTIONS, opts);
     this.options.url = (this.options.url || '').replace(/\/$/, '');
     this.httpGet.call(this.http, this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise().then((res: Response) => {
       if (!res.ok) {
@@ -160,6 +174,9 @@ export class Ng2StatsService implements OnDestroy {
           this.recordEvent(JSON.parse(lastReload)).then(ok => {
             if (ok) { localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY); }
           });
+        }
+        if (print) {
+          console.warn(res.json());
         }
       }
     }, () => {

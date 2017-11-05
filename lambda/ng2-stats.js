@@ -1,7 +1,21 @@
 'use strict';
 
-const doc = require('dynamodb-doc');
-const dynamo = new doc.DynamoDB();
+const AWS = require('aws-sdk');
+const dynamo = new AWS.DynamoDB.DocumentClient();
+
+Array.prototype.groupBy = function(keyGetter) {
+    const map = new Map();
+    this.forEach((item) => {
+        const key = keyGetter(item);
+        const collection = map.get(key);
+        if(!collection) {
+            map.set(key, [item]);
+        } else {
+            collection.push(item);
+        }
+    });
+    return Array.from(map).map(e => e[1]);
+};
 
 exports.handler = (event, context, callback) => {
     const done = (err, res) => {
@@ -11,6 +25,7 @@ exports.handler = (event, context, callback) => {
             body: err ? '{"message": "' + err.message + '"}' : JSON.stringify(res),
             headers: {
                 'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
             },
         });
     };
@@ -22,23 +37,33 @@ exports.handler = (event, context, callback) => {
         case 'GET':
             if(/\/projects/.test(event.path)) {
                 const project = decodeURIComponent(event.queryStringParameters.project);
-                dynamo.getItem({
+                dynamo.get({
                     TableName: 'ng2-stats_users',
                     Key: {token: token}
-                }, (err, user) => {
-                    if(!user.Item) {
+                }, (err, data) => {
+                    if(err || !data || !data.Item) {
                         done(new Error('Cannot find user by authorization token'));
                         return;
                     }
-                    dynamo.getItem({
+                    dynamo.get({
                         TableName: 'ng2-stats_projects',
                         Key: {id: project}
                     }, (err, data) => {
-                        if(!data.Item) { // Do not create on error
-                            dynamo.putItem({TableName: 'ng2-stats_projects', Item: {id: project, owner: token, events: []}}, done);
+                        if(!data || !data.Item) { // Do not create on error
+                            dynamo.put({TableName: 'ng2-stats_projects', Item: {id: project, owner: token, events: []}}, done);
                             return;
                         }
-                        done(err, data.Item);
+                        const item = data.Item;
+                        const reloads = item.events.filter(e => e.type === 'reload');
+                        item.stats = {
+                            requestByDuration: item.events.filter(e => e.type === 'http').groupBy(e => e.to).map(list => ({
+                                to: list[0].to,
+                                avg: list.reduce((now, e) => now + e.spacing, 0) / list.length
+                            })).sort((list1, list2) => list2.avg - list1.avg),
+                            avgJITCompileTime: reloads.reduce((now, e) => now + e.spacing, 0) / reloads.length
+                        };
+                        delete item.events;
+                        done(err, item);
                     });
                 });
             } else {
@@ -58,31 +83,37 @@ exports.handler = (event, context, callback) => {
                     done(new Error('Bad request type'));
                     return;
                 }
-                dynamo.getItem({
+                dynamo.get({
                     TableName: 'ng2-stats_users',
                     Key: {token: token}
-                }, (err, user) => {
-                    if (!user.Item) {
+                }, (err, data) => {
+                    if (err || !data || !data.Item) {
                         done(new Error('Cannot find user by authorization token'));
                         return;
                     }
-                    dynamo.getItem({
+                    dynamo.get({
                         TableName: 'ng2-stats_projects',
                         Key: {id: project}
                     }, (err, data) => {
-                        if (err || !data.Item || data.Item.owner !== token) {
+                        if (err || !data || !data.Item || data.Item.owner !== token) {
                             done(new Error('Cannot find project by id for authorization token'));
                             return;
                         }
-                        data.Item.events.push({
-                            type: request.type,
-                            to: request.to.toString().substr(0, 256),
-                            at: request.at,
-                            spacing: request.spacing,
-                            message: request.message.toString().substr(0, 1024),
-                            by: request.by
-                        });
-                        dynamo.putItem({TableName: 'ng2-stats_projects', Item: data.Item}, done);
+                        dynamo.update({
+                            TableName: 'ng2-stats_projects',
+                            Key: {id: data.Item.id},
+                            UpdateExpression: 'set events = list_append(events, :event)',
+                            ExpressionAttributeValues: {
+                                ':event': [{
+                                    type: request.type,
+                                    to: request.to.toString().substr(0, 256),
+                                    at: request.at,
+                                    spacing: request.spacing,
+                                    message: (request.message || request.type).toString().substr(0, 1024),
+                                    by: request.by
+                                }]
+                            }
+                        }, done);
                     });
                 });
             } else {
