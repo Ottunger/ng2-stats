@@ -7,8 +7,9 @@ import 'rxjs/add/operator/toPromise';
 
 export interface StatsOptions {
   url?: string;
+  username?: string;
   token?: string;
-  account?: string;
+  by?: string;
   project?: string;
   reloadOnError?: boolean;
   monitoredHttp?: string;
@@ -30,8 +31,9 @@ export class Ng2StatsService implements OnDestroy {
 
   private static DEFAULT_OPTIONS: StatsOptions = {
     url: 'https://ilpnvewoa0.execute-api.eu-west-2.amazonaws.com/prod',
-    token: 'SPIKESEED',
-    account: navigator.userAgent,
+    username: 'spikeseed',
+    token: 'rblysgypiasyfhcldi',
+    by: navigator.userAgent,
     project: encodeURIComponent(document.title.toLowerCase().replace(/\s/g, '')),
     reloadOnError: false,
     monitoredHttp: '.'
@@ -48,7 +50,7 @@ export class Ng2StatsService implements OnDestroy {
     return {headers: new Headers({
       'Content-Type': 'application/json',
       Accept: 'application/json',
-      Authorization: 'Bearer ' + this.options.token
+      Authorization: 'Bearer ' + this.options.username + ':' + this.options.token
     })};
   }
 
@@ -74,7 +76,7 @@ export class Ng2StatsService implements OnDestroy {
         to: e.urlAfterRedirects,
         at: now,
         spacing: now - this.lastMove,
-        by: this.options.account
+        by: this.options.by
       });
       this.lastMove = now;
     });
@@ -86,8 +88,8 @@ export class Ng2StatsService implements OnDestroy {
     }
 
     const oldLog = window.console.log;
+    let beginCompile = 0;
     (<any>window).console.log = (...params: any[]) => {
-      let beginCompile = 0;
       oldLog.apply(null, params);
       if (params[0].toString().indexOf('ecompiling') > -1) { // Webpack recompiling
         beginCompile = new Date().getTime();
@@ -98,7 +100,7 @@ export class Ng2StatsService implements OnDestroy {
           to: window.location.toString(),
           at: now,
           spacing: now - beginCompile,
-          by: this.options.account
+          by: this.options.by
         } as StatsEvent));
       }
     };
@@ -112,7 +114,7 @@ export class Ng2StatsService implements OnDestroy {
           to: window.location.toString(),
           at: new Date().getTime(),
           message: params[1].toString(),
-          by: this.options.account
+          by: this.options.by
         }).then(() => {
           if (this.options.reloadOnError) {
             const stack = params[1].toString() + ' ON ' + window.location.toString();
@@ -133,7 +135,7 @@ export class Ng2StatsService implements OnDestroy {
             to: params[0],
             at: begin,
             spacing: now - begin,
-            by: this.options.account
+            by: this.options.by
           });
           return res;
         });
@@ -151,7 +153,7 @@ export class Ng2StatsService implements OnDestroy {
             to: params[0],
             at: begin,
             spacing: now - begin,
-            by: this.options.account
+            by: this.options.by
           });
           return res;
         });
