@@ -48,8 +48,9 @@ and load it with your desired options:
 
 ```js
 this.ng2statsService.load({
-    token: 'MYTEAMTOKEN',
-    account: 'A username', // Or the user agent
+    username: 'MyUsername',
+    token: 'API-generated-token',
+    by: 'teamMemberA', // Or the user agent
     project: 'A project', // Or the document title
     reloadOnError: false, // Whether to reload page when an error is thrown by ng2, its dump being reshown,
     monitoredHttp: 'api.myapi.com' // A regexp to match for requests whose performance will be monitored
