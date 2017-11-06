@@ -73,17 +73,45 @@ exports.handler = (event, context, callback) => {
                             return;
                         }
                         const item = data.Item;
-                        const reloads = item.events.filter(e => e.type === 'reload');
+                        // Next line should be O(n), enforce sorting not yet needed
+                        // item.events.sort((e1, e2) => e2.at - e1.at);
+                        const eventLists = item.events.groupBy(e => e.type);
+
+                        let reloads = [], https = [], routingChanges = [], errors = [];
+                        for(let i = 0; i < eventLists.length; i++) {
+                            switch(eventLists[i][0].type) {
+                                case 'reload':
+                                    reloads = eventLists[i];
+                                    break;
+                                case 'http':
+                                    https = eventLists[i];
+                                    break;
+                                case 'routingChange':
+                                    routingChanges = eventLists[i];
+                                    break;
+                                case 'error':
+                                    errors = eventLists[i];
+                                    break;
+                            }
+                        }
+                        const httpsPerDestination = https.groupBy(e => e.to);
                         item.stats = {
-                            requestByDuration: item.events.filter(e => e.type === 'http').groupBy(e => e.to).map(list => ({
+                            requestsByDuration: httpsPerDestination.map(list => ({
                                 to: list[0].to,
-                                avg: list.reduce((now, e) => now + e.spacing, 0) / list.length
-                            })).sort((list1, list2) => list2.avg - list1.avg),
+                                avgLength: list.reduce((now, e) => now + e.spacing, 0) / list.length
+                            })).sort((e1, e2) => e2.avg - e1.avg),
+                            requestsByCallsPerSession: httpsPerDestination.map(list => {
+                                const numRequestsPerSession = list.groupBy(e => e.sessionId).map(list => list.length);
+                                return {
+                                    to: list[0].to,
+                                    avgCallsPerSession: numRequestsPerSession.reduce((now, e) => now + e, 0) / numRequestsPerSession.length
+                                };
+                            }).sort((e1, e2) => e2.avgCallsPerSession - e1.avgCallsPerSession),
                             avgWebpackReloadTime: reloads.reduce((now, e) => now + e.spacing, 0) / reloads.length,
-                            errorsPerPage: item.events.filter(e => e.type === 'error').groupBy(e => e.to).map(list => ({
+                            errorsPerPage: errors.groupBy(e => e.to).map(list => ({
                                 on: list[0].to,
                                 count: list.reduce((now, e) => now + e.spacing, 0) / list.length
-                            })).sort((list1, list2) => list2.count - list1.count)
+                            })).sort((e1, e2) => e2.count - e1.count)
                         };
                         delete item.events;
                         done(err, item);

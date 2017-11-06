@@ -17,6 +17,7 @@ export interface StatsOptions {
 
 interface StatsEvent {
   type: 'routingChange' | 'reload' | 'error' | 'http';
+  sessionId: string;
   to: string;
   at: number;
   spacing?: number;
@@ -39,6 +40,7 @@ export class Ng2StatsService implements OnDestroy {
     monitoredHttp: '.'
   };
 
+  private sessionId = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
   private routerSub: Subscription;
   private options: StatsOptions = [];
   private loaded = false;
@@ -73,6 +75,7 @@ export class Ng2StatsService implements OnDestroy {
       const now = new Date().getTime();
       this.recordEvent({
         type: 'routingChange',
+        sessionId: this.sessionId,
         to: e.urlAfterRedirects,
         at: now,
         spacing: now - this.lastMove,
@@ -95,8 +98,11 @@ export class Ng2StatsService implements OnDestroy {
         beginCompile = new Date().getTime();
       } else if (params[0].toString().indexOf('eloading') > -1) { // Webpack reloading
         const now = new Date().getTime();
+        // New session
+        this.sessionId = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
         localStorage.setItem(Ng2StatsService.NG2_STATS_LR_KEY, JSON.stringify({
           type: 'reload',
+          sessionId: this.sessionId,
           to: window.location.toString(),
           at: now,
           spacing: now - beginCompile,
@@ -111,6 +117,7 @@ export class Ng2StatsService implements OnDestroy {
       if (params.length > 1 && params[0] === 'ERROR') {
         this.recordEvent({
           type: 'error',
+          sessionId: this.sessionId,
           to: window.location.toString(),
           at: new Date().getTime(),
           message: params[1].toString(),
@@ -132,7 +139,8 @@ export class Ng2StatsService implements OnDestroy {
           const now = new Date().getTime();
           this.recordEvent({
             type: 'http',
-            to: params[0],
+            sessionId: this.sessionId,
+            to: params[0].replace(/(\?|#).*$/, '').replace(/\/$/, ''),
             at: begin,
             spacing: now - begin,
             by: this.options.by
@@ -150,7 +158,8 @@ export class Ng2StatsService implements OnDestroy {
           const now = new Date().getTime();
           this.recordEvent({
             type: 'http',
-            to: params[0],
+            sessionId: this.sessionId,
+            to: params[0].replace(/(\?|#).*$/, '').replace(/\/$/, ''),
             at: begin,
             spacing: now - begin,
             by: this.options.by
