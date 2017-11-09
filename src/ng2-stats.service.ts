@@ -42,7 +42,7 @@ export class Ng2StatsService implements OnDestroy {
 
   private sessionId = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
   private routerSub: Subscription;
-  private options: StatsOptions = [];
+  private options: StatsOptions = {};
   private loaded = false;
   private lastMove: number;
   private httpGet: Function;
@@ -71,7 +71,7 @@ export class Ng2StatsService implements OnDestroy {
       document.body.appendChild(span);
     });
 
-    this.routerSub = this.router.events.filter(e => e instanceof NavigationEnd).subscribe((e: NavigationEnd) => {
+    this.routerSub = this.router.events.filter((e: any) => e instanceof NavigationEnd).subscribe((e: NavigationEnd) => {
       const now = new Date().getTime();
       this.recordEvent({
         type: 'routingChange',
@@ -200,7 +200,7 @@ export class Ng2StatsService implements OnDestroy {
     this.routerSub.unsubscribe();
   }
 
-  private recordEvent(ev: StatsEvent): Promise<undefined> {
+  private recordEvent(ev: StatsEvent): Promise<boolean> {
     if (this.loaded) {
       return this.httpPost.call(this.http, this.options.url + '/projects?project=' + this.options.project,
         ev, this.httpOptions).toPromise().then((res: Response) => res.ok, () => false);
