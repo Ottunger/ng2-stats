@@ -1,6 +1,6 @@
 {
   "name": "ng2-stats",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A statistics tracker for ng2+",
   "main": "./dist/index.js",
   "scripts": {
