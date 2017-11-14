@@ -124,16 +124,27 @@ exports.handler = (event, context, callback) => {
         case 'POST':
             const request = JSON.parse(event.body);
             if(/\/users/.test(event.path)) {
-                const token = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
-                const salt = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
-                dynamo.put({TableName: 'ng2-stats_users', Item: {
-                    username: request.username,
-                    password: crypto.createHash('sha256').update(request.password + salt).digest('hex'),
-                    email: request.email,
-                    token: token,
-                    salt: salt
-                }}, (err) => {
-                    done(err, {token: token});
+                dynamo.get({
+                    TableName: 'ng2-stats_users',
+                    Key: {username: request.username}
+                }, (err, data) => {
+                    if(!err && data && data.Item) {
+                        done(new Error('This user already exists'))
+                        return;
+                    }
+                    const token = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
+                    const salt = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
+                    dynamo.put({
+                        TableName: 'ng2-stats_users', Item: {
+                            username: request.username,
+                            password: crypto.createHash('sha256').update(request.password + salt).digest('hex'),
+                            email: request.email,
+                            token: token,
+                            salt: salt
+                        }
+                    }, (err) => {
+                        done(err, {token: token});
+                    });
                 });
             } else if(/\/projects/.test(event.path)) {
                 const project = decodeURIComponent(event.queryStringParameters.project);
