@@ -1,6 +1,6 @@
 import { EventEmitter, Injectable, NgZone, OnDestroy } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs/Observable';
 import { Subscription } from 'rxjs/Subscription';
 import 'rxjs/add/operator/filter';
@@ -200,26 +200,27 @@ export class Ng2StatsService implements OnDestroy {
     this.options.url = (this.options.url || '').replace(/\/$/, '');
 
     // Do login
-    this.httpGet.call(this.http, this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise().then((res: Response) => {
-      if (!res.ok) {
+    this.httpGet.call(this.http, this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise()
+      .then((res: HttpResponse) => {
+        if (!res.ok) {
+          this.loaded = false;
+          console.error('Cannot log you in on this project...');
+        } else {
+          this.loaded = true;
+          const lastReload = localStorage.getItem(Ng2StatsService.NG2_STATS_LR_KEY);
+          if (lastReload) {
+            this.recordEvent(JSON.parse(lastReload)).then(ok => {
+              if (ok) { localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY); }
+            });
+          }
+          if (print) {
+            console.warn(res.body);
+          }
+        }
+      }, () => {
         this.loaded = false;
         console.error('Cannot log you in on this project...');
-      } else {
-        this.loaded = true;
-        const lastReload = localStorage.getItem(Ng2StatsService.NG2_STATS_LR_KEY);
-        if (lastReload) {
-          this.recordEvent(JSON.parse(lastReload)).then(ok => {
-            if (ok) { localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY); }
-          });
-        }
-        if (print) {
-          console.warn(res.json());
-        }
-      }
-    }, () => {
-      this.loaded = false;
-      console.error('Cannot log you in on this project...');
-    });
+      });
   }
 
   ngOnDestroy() {
@@ -229,7 +230,7 @@ export class Ng2StatsService implements OnDestroy {
   private recordEvent(ev: StatsEvent): Promise<boolean> {
     if (this.loaded) {
       return this.httpPost.call(this.http, this.options.url + '/projects?project=' + this.options.project,
-        ev, this.httpOptions).toPromise().then((res: Response) => res.ok, () => false);
+        ev, this.httpOptions).toPromise().then((res: HttpResponse) => res.ok, () => false);
     }
     return Promise.resolve(false);
   }
