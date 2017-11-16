@@ -37,10 +37,10 @@
   "main": "./dist/index.js",
   "name": "ng2-stats",
   "peerDependencies": {
-    "@angular/animations": "^4.0.0",
-    "@angular/common": "^4.0.0",
-    "@angular/core": "^4.0.0",
-    "@angular/platform-browser": "^4.0.0"
+    "@angular/animations": "^5.0.0",
+    "@angular/common": "^5.0.0",
+    "@angular/core": "^5.0.0",
+    "@angular/platform-browser": "^5.0.0"
   },
   "repository": {
     "type": "git",
@@ -48,12 +48,9 @@
   },
   "scripts": {
     "build": "ngc -p tsconfig.json",
-    "lint": "npm run tslint \"src/**/*.ts\"",
     "packagr": "ng-packagr -p ng-package.json",
-    "test": "npm run lint && karma start",
-    "tsc": "tsc",
-    "tslint": "tslint"
+    "tslint": "tslint \"src/**/*.ts\" --fix"
   },
   "typings": "./dist/index.d.ts",
-  "version": "0.0.4"
+  "version": "0.0.5"
 }
