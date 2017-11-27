@@ -1,6 +1,7 @@
-import { Injectable, NgZone, OnDestroy } from '@angular/core';
+import { EventEmitter, Injectable, NgZone, OnDestroy } from '@angular/core';
 import { NavigationEnd, Router } from '@angular/router';
-import { Http, Headers, Response } from '@angular/http';
+import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
+import { Observable } from 'rxjs/Observable';
 import { Subscription } from 'rxjs/Subscription';
 import 'rxjs/add/operator/filter';
 import 'rxjs/add/operator/toPromise';
@@ -13,6 +14,7 @@ export interface StatsOptions {
   project?: string;
   reloadOnError?: boolean;
   monitoredHttp?: string;
+  checkSubscriptions?: boolean;
 }
 
 interface StatsEvent {
@@ -33,11 +35,12 @@ export class Ng2StatsService implements OnDestroy {
   private static DEFAULT_OPTIONS: StatsOptions = {
     url: 'https://ilpnvewoa0.execute-api.eu-west-2.amazonaws.com/prod',
     username: 'spikeseed',
-    token: 'rblysgypiasyfhcldi',
+    token: 'qwyzxztsessgaatt',
     by: navigator.userAgent,
     project: encodeURIComponent(document.title.toLowerCase().replace(/\s/g, '')),
     reloadOnError: false,
-    monitoredHttp: '.'
+    monitoredHttp: '.',
+    checkSubscriptions: true
   };
 
   private sessionId = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
@@ -45,21 +48,30 @@ export class Ng2StatsService implements OnDestroy {
   private options: StatsOptions = {};
   private loaded = false;
   private lastMove: number;
-  private httpGet: Function;
-  private httpPost: Function;
+
+  private httpGet: (a?: any, b?: any, c?: any) => any;
+  private httpPost: (a?: any, b?: any, c?: any) => any;
+  private obsSub: (a?: any, b?: any, c?: any) => any;
 
   private get httpOptions() {
-    return {headers: new Headers({
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: 'Bearer ' + this.options.username + ':' + this.options.token
-    })};
+    return {
+      headers: new HttpHeaders({
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: 'Bearer ' + this.options.username + ':' + this.options.token
+      }),
+      observe: 'response'
+    };
   }
 
-  constructor(private router: Router, private http: Http, private zone: NgZone) {
+  constructor(private router: Router, private http: HttpClient, private zone: NgZone) {
+    const self = this;
+    let regSubs: Subscription[] = [];
+
     this.lastMove = new Date().getTime();
     this.httpGet = this.http.get;
     this.httpPost = this.http.post;
+    this.obsSub = Observable.prototype.subscribe;
 
     this.zone.runOutsideAngular(() => {
       const span = document.createElement('SPAN');
@@ -71,6 +83,11 @@ export class Ng2StatsService implements OnDestroy {
       document.body.appendChild(span);
     });
 
+    Observable.prototype.subscribe = function(...params: any[]) {
+      const sub = self.obsSub.apply(this, params);
+      if (self.options.checkSubscriptions) { regSubs.push(sub); }
+      return sub;
+    };
     this.routerSub = this.router.events.filter((e: any) => e instanceof NavigationEnd).subscribe((e: NavigationEnd) => {
       const now = new Date().getTime();
       this.recordEvent({
@@ -82,6 +99,15 @@ export class Ng2StatsService implements OnDestroy {
         by: this.options.by
       });
       this.lastMove = now;
+
+      if (this.options.checkSubscriptions) {
+        regSubs = regSubs.filter(sub => !sub.closed && !sub['_parent']
+          && sub['_subscriptions'].every((s: any) => s.subject && !s.subject.closed && !(s.subject instanceof EventEmitter)));
+        if (regSubs.length) {
+          console.warn('NEW REMAINING SUBSCRIPTIONS ON', regSubs.map(sub => [sub, sub['_subscriptions'].map((s: any) => s.subject)]));
+        }
+        regSubs = [];
+      }
     });
 
     const lastError = localStorage.getItem(Ng2StatsService.NG2_STATS_LE_KEY);
@@ -135,7 +161,7 @@ export class Ng2StatsService implements OnDestroy {
     (<any>this.http).get = (...params: any[]) => {
       if (new RegExp(this.options.monitoredHttp).test(params[0])) {
         const begin = new Date().getTime();
-        return this.httpGet.apply(this.http, params).map((res: Response) => {
+        return this.httpGet.apply(this.http, params).do(() => {
           const now = new Date().getTime();
           this.recordEvent({
             type: 'http',
@@ -145,7 +171,6 @@ export class Ng2StatsService implements OnDestroy {
             spacing: now - begin,
             by: this.options.by
           });
-          return res;
         });
       }
       return this.httpGet.apply(this.http, params);
@@ -154,7 +179,7 @@ export class Ng2StatsService implements OnDestroy {
     (<any>this.http).post = (...params: any[]) => {
       if (new RegExp(this.options.monitoredHttp).test(params[0])) {
         const begin = new Date().getTime();
-        return this.httpPost.apply(this.http, params).map((res: Response) => {
+        return this.httpPost.apply(this.http, params).do(() => {
           const now = new Date().getTime();
           this.recordEvent({
             type: 'http',
@@ -164,7 +189,6 @@ export class Ng2StatsService implements OnDestroy {
             spacing: now - begin,
             by: this.options.by
           });
-          return res;
         });
       }
       return this.httpPost.apply(this.http, params);
@@ -174,26 +198,29 @@ export class Ng2StatsService implements OnDestroy {
   load(opts: StatsOptions = {}, print = false) {
     this.options = Object.assign({}, Ng2StatsService.DEFAULT_OPTIONS, opts);
     this.options.url = (this.options.url || '').replace(/\/$/, '');
-    this.httpGet.call(this.http, this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise().then((res: Response) => {
-      if (!res.ok) {
+
+    // Do login
+    this.httpGet.call(this.http, this.options.url + '/projects?project=' + this.options.project, this.httpOptions).toPromise()
+      .then((res: HttpResponse) => {
+        if (!res.ok) {
+          this.loaded = false;
+          console.error('Cannot log you in on this project...');
+        } else {
+          this.loaded = true;
+          const lastReload = localStorage.getItem(Ng2StatsService.NG2_STATS_LR_KEY);
+          if (lastReload) {
+            this.recordEvent(JSON.parse(lastReload)).then(ok => {
+              if (ok) { localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY); }
+            });
+          }
+          if (print) {
+            console.warn(res.body);
+          }
+        }
+      }, () => {
         this.loaded = false;
         console.error('Cannot log you in on this project...');
-      } else {
-        this.loaded = true;
-        const lastReload = localStorage.getItem(Ng2StatsService.NG2_STATS_LR_KEY);
-        if (lastReload) {
-          this.recordEvent(JSON.parse(lastReload)).then(ok => {
-            if (ok) { localStorage.removeItem(Ng2StatsService.NG2_STATS_LR_KEY); }
-          });
-        }
-        if (print) {
-          console.warn(res.json());
-        }
-      }
-    }, () => {
-      this.loaded = false;
-      console.error('Cannot log you in on this project...');
-    });
+      });
   }
 
   ngOnDestroy() {
@@ -203,7 +230,7 @@ export class Ng2StatsService implements OnDestroy {
   private recordEvent(ev: StatsEvent): Promise<boolean> {
     if (this.loaded) {
       return this.httpPost.call(this.http, this.options.url + '/projects?project=' + this.options.project,
-        ev, this.httpOptions).toPromise().then((res: Response) => res.ok, () => false);
+        ev, this.httpOptions).toPromise().then((res: HttpResponse) => res.ok, () => false);
     }
     return Promise.resolve(false);
   }
