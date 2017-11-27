@@ -124,12 +124,16 @@ exports.handler = (event, context, callback) => {
         case 'POST':
             const request = JSON.parse(event.body);
             if(/\/users/.test(event.path)) {
+                if(/[,:]/.test(request.username)) {
+                    done(new Error('Invalid chars in username'));
+                    return;
+                }
                 dynamo.get({
                     TableName: 'ng2-stats_users',
                     Key: {username: request.username}
                 }, (err, data) => {
                     if(!err && data && data.Item) {
-                        done(new Error('This user already exists'))
+                        done(new Error('This user already exists'));
                         return;
                     }
                     const token = Math.random().toString(36).replace(/[^a-z]+/g, '').substr(2);
